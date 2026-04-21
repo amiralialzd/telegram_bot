@@ -5,7 +5,6 @@ from dotenv import load_dotenv
 load_dotenv()
 
 DATABASE_URL = os.getenv("DATABASE_URL")
-
 _pool = None
 
 async def get_pool():
@@ -16,18 +15,14 @@ async def get_pool():
 
 
 async def get_or_create_user(telegram_id: int, full_name: str, username: str) -> dict:
-    """Returns user record. Creates with 30 welcome credits if new."""
     pool = await get_pool()
     async with pool.acquire() as conn:
-        user = await conn.fetchrow(
-            "SELECT * FROM users WHERE telegram_id = $1",
-            telegram_id
-        )
+        user = await conn.fetchrow("SELECT * FROM users WHERE telegram_id = $1", telegram_id)
         if user is None:
             user = await conn.fetchrow(
                 """
-                INSERT INTO users (telegram_id, full_name, username, credits)
-                VALUES ($1, $2, $3, 30)
+                INSERT INTO users (telegram_id, full_name, username, credits, language)
+                VALUES ($1, $2, $3, 30, 'tr')
                 RETURNING *
                 """,
                 telegram_id, full_name, username
@@ -38,21 +33,25 @@ async def get_or_create_user(telegram_id: int, full_name: str, username: str) ->
 async def get_user(telegram_id: int) -> dict | None:
     pool = await get_pool()
     async with pool.acquire() as conn:
-        user = await conn.fetchrow(
-            "SELECT * FROM users WHERE telegram_id = $1",
-            telegram_id
-        )
+        user = await conn.fetchrow("SELECT * FROM users WHERE telegram_id = $1", telegram_id)
         return dict(user) if user else None
 
 
+async def set_language(telegram_id: int, lang: str):
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE users SET language = $1 WHERE telegram_id = $2",
+            lang, telegram_id
+        )
+
+
 async def deduct_credits(telegram_id: int, amount: int) -> int:
-    """Deducts credits and returns new balance."""
     pool = await get_pool()
     async with pool.acquire() as conn:
         user = await conn.fetchrow(
             """
-            UPDATE users
-            SET credits = credits - $1
+            UPDATE users SET credits = credits - $1
             WHERE telegram_id = $2 AND credits >= $1
             RETURNING credits
             """,
@@ -60,6 +59,18 @@ async def deduct_credits(telegram_id: int, amount: int) -> int:
         )
         if user is None:
             raise ValueError("Insufficient credits")
+        return user["credits"]
+
+
+async def add_credits(telegram_id: int, amount: int) -> int:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        user = await conn.fetchrow(
+            "UPDATE users SET credits = credits + $1 WHERE telegram_id = $2 RETURNING credits",
+            amount, telegram_id
+        )
+        if user is None:
+            raise ValueError("User not found")
         return user["credits"]
 
 

@@ -8,24 +8,13 @@ from aiogram.fsm.context import FSMContext
 from states import GenerateState
 from keyboards import quality_keyboard, ratio_keyboard
 from db import get_user, deduct_credits, log_generation
+from texts import t
 
 router = Router()
 
-MODEL_MAP = {
-    "model_pro": "flux",
-    "model_v2":  "turbo",
-}
-QUALITY_MAP = {
-    "q_1k": 1024,
-    "q_2k": 2048,
-    "q_4k": 4096,
-}
-RATIO_MAP = {
-    "r_1_1":  "1:1",
-    "r_9_16": "9:16",
-    "r_16_9": "16:9",
-}
-
+MODEL_MAP  = {"model_pro": "flux", "model_v2": "turbo"}
+QUALITY_MAP = {"q_1k": 1024, "q_2k": 2048, "q_4k": 4096}
+RATIO_MAP  = {"r_1_1": "1:1", "r_9_16": "9:16", "r_16_9": "16:9"}
 
 CREDIT_COST = {
     ("model_pro", "q_1k"): 17,
@@ -36,72 +25,35 @@ CREDIT_COST = {
     ("model_v2",  "q_4k"): 10,
 }
 
-def after_generation_keyboard(prompt: str) -> InlineKeyboardMarkup:
+async def get_lang(telegram_id: int) -> str:
+    user = await get_user(telegram_id)
+    return user.get("language", "tr") if user else "tr"
+
+def after_gen_keyboard(lang: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [
-            InlineKeyboardButton(text="🔁 Repeat Prompt", callback_data="repeat_prompt"),
-            InlineKeyboardButton(text="🔄 Start Over", callback_data="go_generate"),
+            InlineKeyboardButton(text=t(lang, "btn_repeat"),  callback_data="repeat_gen"),
+            InlineKeyboardButton(text=t(lang, "btn_restart"), callback_data="go_generate"),
+        ],
+        [
+            InlineKeyboardButton(text=t(lang, "btn_show_balance"), callback_data="go_balance"),
         ]
     ])
 
 
-@router.callback_query(GenerateState.choosing_model, F.data.startswith("model"))
-async def choose_model(callback: CallbackQuery, state: FSMContext):
-    await state.update_data(model=callback.data)
-    await callback.message.answer("Choose quality:", reply_markup=quality_keyboard())
-    await state.set_state(GenerateState.choosing_quality)
-    await callback.answer()
-
-
-@router.callback_query(GenerateState.choosing_quality, F.data.startswith("q_"))
-async def choose_quality(callback: CallbackQuery, state: FSMContext):
-    await state.update_data(quality=callback.data)
-    await callback.message.answer("Choose aspect ratio:", reply_markup=ratio_keyboard())
-    await state.set_state(GenerateState.choosing_ratio)
-    await callback.answer()
-
-
-@router.callback_query(GenerateState.choosing_ratio, F.data.startswith("r_"))
-async def choose_ratio(callback: CallbackQuery, state: FSMContext):
-    data = await state.get_data()
-    model_key   = data.get("model")
-    quality_key = callback.data.replace("r_", "q_")  # temp trick — we store ratio separately
-    ratio_key   = callback.data
-    await state.update_data(ratio=ratio_key)
-
-
-    quality_stored = data.get("quality")
-    cost = CREDIT_COST.get((model_key, quality_stored), 17)
-
-    await callback.message.answer(
-        f"✏️ Alright, write your prompt.\n"
-        f"💰 This generation will cost <b>{cost} credits</b>."
-    )
-    await state.set_state(GenerateState.waiting_prompt)
-    await callback.answer()
-
-
-@router.message(GenerateState.waiting_prompt)
-async def get_prompt(message: Message, state: FSMContext):
-    data = await state.get_data()
-
-    model_key   = data.get("model")
-    quality_key = data.get("quality")
-    ratio_key   = data.get("ratio")
-    prompt      = message.text
-
+async def do_generate(message: Message, state: FSMContext,
+                      model_key: str, quality_key: str, ratio_key: str,
+                      prompt: str, lang: str):
+    """Core generation logic, reused by both first-time and repeat."""
     cost = CREDIT_COST.get((model_key, quality_key), 17)
 
-    # Check credits BEFORE generating
     user = await get_user(message.from_user.id)
     if not user or user["credits"] < cost:
+        balance = user["credits"] if user else 0
         await message.answer(
-            f"❌ <b>Insufficient credits!</b>\n\n"
-            f"This generation costs <b>{cost} credits</b>.\n"
-            f"Your balance: <b>{user['credits'] if user else 0} credits</b>.\n\n"
-            f"Please top up your balance to continue.",
+            t(lang, "no_credits_gen", cost=cost, balance=balance),
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="💳 Top Up Balance", callback_data="go_balance")]
+                [InlineKeyboardButton(text=t(lang, "btn_add_credits"), callback_data="go_balance")]
             ])
         )
         await state.clear()
@@ -126,56 +78,100 @@ async def get_prompt(message: Message, state: FSMContext):
         f"?model={model}&width={width}&height={height}&nologo=true&seed={hash(prompt) % 99999}"
     )
 
-    wait_msg = await message.answer("⏳ Generating your image, please wait...")
+    wait_msg = await message.answer(t(lang, "generating"))
 
     try:
         connector = aiohttp.TCPConnector(ssl=False)
         async with aiohttp.ClientSession(connector=connector) as session:
             async with session.get(image_url, timeout=aiohttp.ClientTimeout(total=60)) as resp:
                 if resp.status != 200:
-                    raise Exception(f"Service returned status {resp.status}")
+                    raise Exception(f"HTTP {resp.status}")
 
-        # Deduct credits only after successful generation
         new_balance = await deduct_credits(message.from_user.id, cost)
-
-        # Log to DB
-        await log_generation(
-            telegram_id=message.from_user.id,
-            model=model_key,
-            quality=quality_key,
-            ratio=ratio_key,
-            prompt=prompt,
-            credits_spent=cost
-        )
+        await log_generation(message.from_user.id, model_key, quality_key, ratio_key, prompt, cost)
 
         await wait_msg.delete()
         await message.answer_photo(
             photo=URLInputFile(image_url),
-            caption=(
-                f"✅ <b>Done!</b>\n"
-                f"<b>Model:</b> {model_key}\n"
-                f"<b>Quality:</b> {quality_key}\n"
-                f"<b>Ratio:</b> {ratio}\n"
-                f"<b>Prompt:</b> {prompt}\n\n"
-                f"💰 Credits spent: <b>{cost}</b> | Remaining: <b>{new_balance}</b>"
-            ),
-            reply_markup=after_generation_keyboard(prompt)
+            caption=t(lang, "done",
+                      model=model_key, quality=quality_key,
+                      ratio=ratio, prompt=prompt,
+                      cost=cost, balance=new_balance),
+            reply_markup=after_gen_keyboard(lang)
         )
 
     except ValueError:
         await wait_msg.delete()
-        await message.answer("❌ Insufficient credits. Please top up your balance.")
-
+        await message.answer(t(lang, "no_credits_gen", cost=cost, balance=0))
     except Exception as e:
         await wait_msg.delete()
-        await message.answer(f"❌ Generation failed: {e}\n\nTry again with /start")
-
+        await message.answer(t(lang, "gen_failed", error=str(e)))
     finally:
         await state.clear()
 
 
-@router.callback_query(lambda c: c.data == "repeat_prompt")
-async def repeat_prompt(callback: CallbackQuery, state: FSMContext):
-    await callback.message.answer("Choose your model:", reply_markup=__import__('keyboards').model_keyboard())
-    await state.set_state(GenerateState.choosing_model)
+
+
+@router.callback_query(GenerateState.choosing_model, F.data.startswith("model"))
+async def choose_model(callback: CallbackQuery, state: FSMContext):
+    lang = await get_lang(callback.from_user.id)
+    await state.update_data(model=callback.data)
+    await callback.message.answer(t(lang, "choose_quality"), reply_markup=quality_keyboard())
+    await state.set_state(GenerateState.choosing_quality)
     await callback.answer()
+
+
+@router.callback_query(GenerateState.choosing_quality, F.data.startswith("q_"))
+async def choose_quality(callback: CallbackQuery, state: FSMContext):
+    lang = await get_lang(callback.from_user.id)
+    await state.update_data(quality=callback.data)
+    await callback.message.answer(t(lang, "choose_ratio"), reply_markup=ratio_keyboard())
+    await state.set_state(GenerateState.choosing_ratio)
+    await callback.answer()
+
+
+@router.callback_query(GenerateState.choosing_ratio, F.data.startswith("r_"))
+async def choose_ratio(callback: CallbackQuery, state: FSMContext):
+    lang = await get_lang(callback.from_user.id)
+    data = await state.get_data()
+    await state.update_data(ratio=callback.data)
+    cost = CREDIT_COST.get((data.get("model"), data.get("quality")), 17)
+    await callback.message.answer(t(lang, "prompt_cost", cost=cost))
+    await state.set_state(GenerateState.waiting_prompt)
+    await callback.answer()
+
+
+@router.message(GenerateState.waiting_prompt)
+async def get_prompt(message: Message, state: FSMContext):
+    lang = await get_lang(message.from_user.id)
+    data = await state.get_data()
+    # Save last generation data for repeat
+    await state.update_data(last_prompt=message.text)
+    await do_generate(
+        message, state,
+        model_key=data.get("model"),
+        quality_key=data.get("quality"),
+        ratio_key=data.get("ratio"),
+        prompt=message.text,
+        lang=lang
+    )
+
+
+
+
+@router.callback_query(lambda c: c.data == "repeat_gen")
+async def repeat_generation(callback: CallbackQuery, state: FSMContext):
+    lang = await get_lang(callback.from_user.id)
+    data = await state.get_data()
+
+    model_key   = data.get("model")
+    quality_key = data.get("quality")
+    ratio_key   = data.get("ratio")
+    prompt      = data.get("last_prompt")
+
+    if not all([model_key, quality_key, ratio_key, prompt]):
+        await callback.answer("Session expired. Please start over.", show_alert=True)
+        return
+
+    await callback.answer()
+    await do_generate(callback.message, state, model_key, quality_key, ratio_key, prompt, lang)

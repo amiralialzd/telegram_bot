@@ -1,0 +1,54 @@
+TEXTS = {
+    "tr": {
+        "welcome_new": "Hoş geldin, <b>{name}</b>! 👋\n\n💰 Bakiyen: <b>{credits} kredi</b>\n\nNe yapmak istersin?",
+        "welcome_back": "Tekrar hoş geldin, <b>{name}</b>! 👋\n\n💰 Bakiyen: <b>{credits} kredi</b>\n\nNe yapmak istersin?",
+        "no_credits": "Tekrar hoş geldin, <b>{name}</b>! 👋\n\n😔 <b>0 kredin</b> kaldı.\nGörseller oluşturmaya devam etmek için bakiyeni yükselt.",
+        "choose_model": "Modelini seç:",
+        "choose_quality": "Kaliteyi seç:",
+        "choose_ratio": "En-boy oranını seç:",
+        "prompt_cost": "✏️ Promptunu yaz.\n💰 Bu işlem <b>{cost} kredi</b> tutacak.",
+        "generating": "⏳ Görseliniz oluşturuluyor, lütfen bekleyin...",
+        "done": "✅ <b>Tamamlandı!</b>\n<b>Model:</b> {model}\n<b>Kalite:</b> {quality}\n<b>Oran:</b> {ratio}\n<b>Prompt:</b> {prompt}\n\n💰 Harcanan: <b>{cost} kredi</b> | Kalan: <b>{balance} kredi</b>",
+        "no_credits_gen": "❌ <b>Yetersiz kredi!</b>\n\nBu işlem <b>{cost} kredi</b> tutar.\nBakiyen: <b>{balance} kredi</b>.\n\nLütfen bakiyeni yükselt.",
+        "gen_failed": "❌ Oluşturma başarısız: {error}\n\nTekrar denemek için /start",
+        "balance_msg": "💳 <b>Bakiyen</b>\n\nKalan kredi: <b>{credits}</b>\n\nPaket seç:",
+        "payment_success": "✅ <b>Ödeme başarılı!</b>\n\nEklendi: <b>{credits} kredi</b>\nYeni bakiye: <b>{balance} kredi</b>\n\n🎨 Oluşturmaya başlamak için /start",
+        "lang_changed": "🇹🇷 Dil Türkçe olarak ayarlandı.",
+        # Buttons
+        "btn_generate": "🎨 Görsel Oluştur",
+        "btn_balance": "💳 Bakiye & Yükselt",
+        "btn_repeat": "🔁 Tekrar Oluştur",
+        "btn_restart": "🔄 Baştan Başla",
+        "btn_show_balance": "💳 Bakiyemi Gör",
+        "btn_add_credits": "➕ Kredi Yükle",
+        "btn_lang": "🇬🇧 Switch to English",
+    },
+    "en": {
+        "welcome_new": "Welcome, <b>{name}</b>! 👋\n\n💰 Your balance: <b>{credits} credits</b>\n\nWhat would you like to do?",
+        "welcome_back": "Welcome back, <b>{name}</b>! 👋\n\n💰 Your balance: <b>{credits} credits</b>\n\nWhat would you like to do?",
+        "no_credits": "Welcome back, <b>{name}</b>! 👋\n\n😔 You have <b>0 credits</b> left.\nTop up your balance to continue generating images.",
+        "choose_model": "Choose your model:",
+        "choose_quality": "Choose quality:",
+        "choose_ratio": "Choose aspect ratio:",
+        "prompt_cost": "✏️ Write your prompt.\n💰 This generation will cost <b>{cost} credits</b>.",
+        "generating": "⏳ Generating your image, please wait...",
+        "done": "✅ <b>Done!</b>\n<b>Model:</b> {model}\n<b>Quality:</b> {quality}\n<b>Ratio:</b> {ratio}\n<b>Prompt:</b> {prompt}\n\n💰 Spent: <b>{cost} credits</b> | Remaining: <b>{balance} credits</b>",
+        "no_credits_gen": "❌ <b>Insufficient credits!</b>\n\nThis generation costs <b>{cost} credits</b>.\nYour balance: <b>{balance} credits</b>.\n\nPlease top up your balance.",
+        "gen_failed": "❌ Generation failed: {error}\n\nTry again with /start",
+        "balance_msg": "💳 <b>Your Balance</b>\n\nCredits remaining: <b>{credits}</b>\n\nChoose a package:",
+        "payment_success": "✅ <b>Payment successful!</b>\n\nAdded: <b>{credits} credits</b>\nNew balance: <b>{balance} credits</b>\n\n🎨 Start generating with /start",
+        "lang_changed": "🇬🇧 Language set to English.",
+        # Buttons
+        "btn_generate": "🎨 Image Generation",
+        "btn_balance": "💳 Balance & Top Up",
+        "btn_repeat": "🔁 Repeat Prompt",
+        "btn_restart": "🔄 Start Over",
+        "btn_show_balance": "💳 My Balance",
+        "btn_add_credits": "➕ Add Credits",
+        "btn_lang": "🇹🇷 Türkçe'ye Geç",
+    }
+}
+
+def t(lang: str, key: str, **kwargs) -> str:
+    text = TEXTS.get(lang, TEXTS["tr"]).get(key, key)
+    return text.format(**kwargs) if kwargs else text
