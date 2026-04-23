@@ -12,9 +12,9 @@ from texts import t
 
 router = Router()
 
-MODEL_MAP  = {"model_pro": "flux", "model_v2": "turbo"}
+MODEL_MAP   = {"model_pro": "flux", "model_v2": "turbo"}
 QUALITY_MAP = {"q_1k": 1024, "q_2k": 2048, "q_4k": 4096}
-RATIO_MAP  = {"r_1_1": "1:1", "r_9_16": "9:16", "r_16_9": "16:9"}
+RATIO_MAP   = {"r_1_1": "1:1", "r_9_16": "9:16", "r_16_9": "16:9"}
 
 CREDIT_COST = {
     ("model_pro", "q_1k"): 17,
@@ -44,7 +44,6 @@ def after_gen_keyboard(lang: str) -> InlineKeyboardMarkup:
 async def do_generate(message: Message, state: FSMContext,
                       model_key: str, quality_key: str, ratio_key: str,
                       prompt: str, lang: str):
-    """Core generation logic, reused by both first-time and repeat."""
     cost = CREDIT_COST.get((model_key, quality_key), 17)
 
     user = await get_user(message.from_user.id)
@@ -56,7 +55,8 @@ async def do_generate(message: Message, state: FSMContext,
                 [InlineKeyboardButton(text=t(lang, "btn_add_credits"), callback_data="go_balance")]
             ])
         )
-        await state.clear()
+
+        await state.set_state(None)
         return
 
     model  = MODEL_MAP.get(model_key, "flux")
@@ -100,15 +100,17 @@ async def do_generate(message: Message, state: FSMContext,
             reply_markup=after_gen_keyboard(lang)
         )
 
+        # Set state to None but KEEP the data so repeat works
+        await state.set_state(None)
+
     except ValueError:
         await wait_msg.delete()
         await message.answer(t(lang, "no_credits_gen", cost=cost, balance=0))
+        await state.set_state(None)
     except Exception as e:
         await wait_msg.delete()
         await message.answer(t(lang, "gen_failed", error=str(e)))
-    finally:
-        await state.clear()
-
+        await state.set_state(None)
 
 
 
@@ -145,7 +147,7 @@ async def choose_ratio(callback: CallbackQuery, state: FSMContext):
 async def get_prompt(message: Message, state: FSMContext):
     lang = await get_lang(message.from_user.id)
     data = await state.get_data()
-    # Save last generation data for repeat
+    # Save prompt into state so repeat can access it
     await state.update_data(last_prompt=message.text)
     await do_generate(
         message, state,
@@ -170,8 +172,23 @@ async def repeat_generation(callback: CallbackQuery, state: FSMContext):
     prompt      = data.get("last_prompt")
 
     if not all([model_key, quality_key, ratio_key, prompt]):
-        await callback.answer("Session expired. Please start over.", show_alert=True)
+        await callback.answer(
+            "Oturum süresi doldu, lütfen baştan başla." if lang == "tr"
+            else "Session expired, please start over.",
+            show_alert=True
+        )
         return
 
     await callback.answer()
     await do_generate(callback.message, state, model_key, quality_key, ratio_key, prompt, lang)
+
+
+@router.callback_query(lambda c: c.data == "go_generate")
+async def go_generate(callback: CallbackQuery, state: FSMContext):
+    lang = await get_lang(callback.from_user.id)
+    from keyboards import model_keyboard
+
+    await state.clear()
+    await callback.message.answer(t(lang, "choose_model"), reply_markup=model_keyboard())
+    await state.set_state(GenerateState.choosing_model)
+    await callback.answer()

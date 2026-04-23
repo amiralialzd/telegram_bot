@@ -45,10 +45,19 @@ async def show_balance(callback: CallbackQuery):
 async def send_invoice(callback: CallbackQuery):
     user = await get_user(callback.from_user.id)
     lang = user.get("language", "tr") if user else "tr"
-    stars = int(callback.data.split("_")[1])
+
+    try:
+        stars = int(callback.data.split("_")[1])
+    except (IndexError, ValueError):
+        await callback.answer("Hata." if lang == "tr" else "Error.", show_alert=True)
+        return
+
     package = next((p for p in PACKAGES if p["stars"] == stars), None)
     if not package:
-        await callback.answer("Geçersiz paket." if lang == "tr" else "Invalid package.", show_alert=True)
+        await callback.answer(
+            "Geçersiz paket." if lang == "tr" else "Invalid package.",
+            show_alert=True
+        )
         return
 
     title = f"{package['credits']} Kredi" if lang == "tr" else f"{package['credits']} Credits"
