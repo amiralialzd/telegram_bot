@@ -17,12 +17,12 @@ QUALITY_MAP = {"q_1k": 1024, "q_2k": 2048, "q_4k": 4096}
 RATIO_MAP   = {"r_1_1": "1:1", "r_9_16": "9:16", "r_16_9": "16:9"}
 
 CREDIT_COST = {
-    ("model_pro", "q_1k"): 17,
-    ("model_pro", "q_2k"): 17,
-    ("model_pro", "q_4k"): 21,
-    ("model_v2",  "q_1k"): 7,
-    ("model_v2",  "q_2k"): 10,
-    ("model_v2",  "q_4k"): 10,
+    ("model_pro", "q_1k"): 12,
+    ("model_pro", "q_2k"): 12,
+    ("model_pro", "q_4k"): 16,
+    ("model_v2",  "q_1k"): 6,
+    ("model_v2",  "q_2k"): 8,
+    ("model_v2",  "q_4k"): 12,
 }
 
 async def get_lang(telegram_id: int) -> str:
