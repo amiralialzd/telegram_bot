@@ -81,7 +81,7 @@ async def upload_image_to_kie(image_bytes: bytes, filename: str = "image.jpg") -
 
     async with aiohttp.ClientSession() as session:
         async with session.post(
-            f"{KIE_UPLOAD}/api/upload/file-stream",
+            f"{KIE_UPLOAD}/api/file-stream-upload",
             headers=upload_headers,
             data=data,
             timeout=aiohttp.ClientTimeout(total=30)
@@ -221,7 +221,6 @@ async def do_generate(message: Message, state: FSMContext,
             pass
         await message.answer(t(lang, "gen_failed", error=str(e)))
         await state.set_state(None)
-
 
 
 
