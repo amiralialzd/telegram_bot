@@ -78,6 +78,7 @@ async def upload_image_to_kie(image_bytes: bytes, filename: str = "image.jpg") -
     upload_headers = {"Authorization": f"Bearer {KIE_API_KEY}"}
     data = aiohttp.FormData()
     data.add_field("file", image_bytes, filename=filename, content_type="image/jpeg")
+    data.add_field("uploadPath", "images")
 
     async with aiohttp.ClientSession() as session:
         async with session.post(
@@ -276,7 +277,7 @@ async def receive_image(message: Message, state: FSMContext, bot: Bot):
 
         photo = message.photo[-1]
         file  = await bot.get_file(photo.file_id)
-        # Download as bytes
+
         file_bytes = await bot.download_file(file.file_path)
         image_bytes = file_bytes.read()
 
@@ -346,7 +347,6 @@ async def get_prompt(message: Message, state: FSMContext):
         user_id=message.from_user.id,
         image_url=data.get("image_url")
     )
-
 
 
 
