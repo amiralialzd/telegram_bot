@@ -90,7 +90,7 @@ async def upload_image_to_kie(image_bytes: bytes, filename: str = "image.jpg") -
             result = await resp.json()
             if not result.get("success") and result.get("code") != 200:
                 raise Exception(f"Upload failed: {result}")
-            return result["data"]["fileUrl"]
+            raise Exception(f"DEBUG full response: {result}")
 
 
 async def create_kie_task(model: str, prompt: str, ratio: str,
@@ -225,6 +225,7 @@ async def do_generate(message: Message, state: FSMContext,
 
 
 
+
 @router.callback_query(GenerateState.choosing_model, F.data.startswith("model"))
 async def choose_model(callback: CallbackQuery, state: FSMContext):
     lang = await get_lang(callback.from_user.id)
@@ -302,7 +303,6 @@ async def receive_image(message: Message, state: FSMContext, bot: Bot):
         await state.set_state(GenerateState.waiting_prompt)
 
 
-
 @router.callback_query(lambda c: c.data == "skip_image")
 async def skip_image(callback: CallbackQuery, state: FSMContext):
     lang = await get_lang(callback.from_user.id)
@@ -347,6 +347,7 @@ async def get_prompt(message: Message, state: FSMContext):
         user_id=message.from_user.id,
         image_url=data.get("image_url")
     )
+
 
 
 
