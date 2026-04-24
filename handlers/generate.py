@@ -100,7 +100,7 @@ async def create_kie_task(model: str, prompt: str, ratio: str, quality: str) -> 
 
 
 async def poll_kie_task(task_id: str, timeout: int = 120) -> str:
-
+    """Polls until task completes, returns image URL."""
     deadline = asyncio.get_event_loop().time() + timeout
     async with aiohttp.ClientSession() as session:
         while asyncio.get_event_loop().time() < deadline:
@@ -163,7 +163,7 @@ async def do_generate(message: Message, state: FSMContext,
 
     try:
         task_id   = await create_kie_task(model, prompt, ratio, quality)
-        image_url = await poll_kie_task(task_id)
+        image_url = await poll_kie_task(task_id, timeout=300)
 
         new_balance = await deduct_credits(uid, cost)
         await log_generation(uid, model_key, quality_key, ratio_key, prompt, cost)
@@ -187,7 +187,6 @@ async def do_generate(message: Message, state: FSMContext,
         await wait_msg.delete()
         await message.answer(t(lang, "gen_failed", error=str(e)))
         await state.set_state(None)
-
 
 
 
