@@ -69,7 +69,6 @@ def after_gen_keyboard(lang: str) -> InlineKeyboardMarkup:
 
 async def create_kie_task(model: str, prompt: str, ratio: str, quality: str) -> str:
 
-
     if model == "nano-banana-2":
         input_body = {
             "prompt": prompt,
@@ -119,7 +118,7 @@ async def poll_kie_task(task_id: str, timeout: int = 120) -> str:
                 state = task.get("state")
 
                 if state == "success":
-
+                    # resultJson is a JSON string containing resultUrls
                     result_json = task.get("resultJson", "{}")
                     result = json.loads(result_json)
                     urls = result.get("resultUrls", [])
@@ -139,10 +138,12 @@ async def poll_kie_task(task_id: str, timeout: int = 120) -> str:
 
 async def do_generate(message: Message, state: FSMContext,
                       model_key: str, quality_key: str, ratio_key: str,
-                      prompt: str, lang: str):
+                      prompt: str, lang: str, user_id: int = None):
+
+    uid  = user_id or message.from_user.id
     cost = CREDIT_COST.get((model_key, quality_key), 17)
 
-    user = await get_user(message.from_user.id)
+    user = await get_user(uid)
     if not user or user["credits"] < cost:
         balance = user["credits"] if user else 0
         await message.answer(
@@ -164,8 +165,8 @@ async def do_generate(message: Message, state: FSMContext,
         task_id   = await create_kie_task(model, prompt, ratio, quality)
         image_url = await poll_kie_task(task_id)
 
-        new_balance = await deduct_credits(message.from_user.id, cost)
-        await log_generation(message.from_user.id, model_key, quality_key, ratio_key, prompt, cost)
+        new_balance = await deduct_credits(uid, cost)
+        await log_generation(uid, model_key, quality_key, ratio_key, prompt, cost)
 
         await wait_msg.delete()
         await message.answer_photo(
@@ -230,7 +231,8 @@ async def get_prompt(message: Message, state: FSMContext):
         quality_key=data.get("quality"),
         ratio_key=data.get("ratio"),
         prompt=message.text,
-        lang=lang
+        lang=lang,
+        user_id=message.from_user.id
     )
 
 
@@ -255,7 +257,8 @@ async def repeat_generation(callback: CallbackQuery, state: FSMContext):
         return
 
     await callback.answer()
-    await do_generate(callback.message, state, model_key, quality_key, ratio_key, prompt, lang)
+
+    await do_generate(callback.message, state, model_key, quality_key, ratio_key, prompt, lang, user_id=callback.from_user.id)
 
 
 @router.callback_query(lambda c: c.data == "go_generate")
