@@ -1,5 +1,6 @@
-import urllib.parse
+import asyncio
 import aiohttp
+import os
 
 from aiogram import Router, F
 from aiogram.types import CallbackQuery, Message, URLInputFile, InlineKeyboardMarkup, InlineKeyboardButton
@@ -12,9 +13,26 @@ from texts import t
 
 router = Router()
 
-MODEL_MAP   = {"model_pro": "flux", "model_v2": "turbo"}
-QUALITY_MAP = {"q_1k": 1024, "q_2k": 2048, "q_4k": 4096}
-RATIO_MAP   = {"r_1_1": "1:1", "r_9_16": "9:16", "r_16_9": "16:9"}
+KIE_API_KEY = os.getenv("KIE_API_KEY")
+KIE_BASE    = "https://api.kie.ai"
+
+
+MODEL_MAP = {
+    "model_pro": "nano-banana-2",
+    "model_v2":  "google/nano-banana",
+}
+
+QUALITY_MAP = {
+    "q_1k": "1K",
+    "q_2k": "2K",
+    "q_4k": "4K",
+}
+
+RATIO_MAP = {
+    "r_1_1":  "1:1",
+    "r_9_16": "9:16",
+    "r_16_9": "16:9",
+}
 
 CREDIT_COST = {
     ("model_pro", "q_1k"): 12,
@@ -25,9 +43,16 @@ CREDIT_COST = {
     ("model_v2",  "q_4k"): 12,
 }
 
+HEADERS = {
+    "Authorization": f"Bearer {KIE_API_KEY}",
+    "Content-Type": "application/json",
+}
+
+
 async def get_lang(telegram_id: int) -> str:
     user = await get_user(telegram_id)
     return user.get("language", "tr") if user else "tr"
+
 
 def after_gen_keyboard(lang: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
@@ -39,6 +64,72 @@ def after_gen_keyboard(lang: str) -> InlineKeyboardMarkup:
             InlineKeyboardButton(text=t(lang, "btn_show_balance"), callback_data="go_balance"),
         ]
     ])
+
+
+async def create_kie_task(model: str, prompt: str, ratio: str, quality: str) -> str:
+    """Submits generation task to KieAI, returns taskId."""
+    # nano-banana-2 uses 'resolution' + 'aspect_ratio', google/nano-banana uses 'image_size'
+    if model == "nano-banana-2":
+        input_body = {
+            "prompt": prompt,
+            "aspect_ratio": ratio,
+            "resolution": quality,
+            "output_format": "png",
+            "image_input": []
+        }
+    else:
+        input_body = {
+            "prompt": prompt,
+            "image_size": ratio,
+            "output_format": "png",
+        }
+
+    payload = {"model": model, "input": input_body}
+
+    async with aiohttp.ClientSession() as session:
+        async with session.post(
+            f"{KIE_BASE}/api/v1/jobs/createTask",
+            headers=HEADERS,
+            json=payload,
+            timeout=aiohttp.ClientTimeout(total=30)
+        ) as resp:
+            data = await resp.json()
+            if data.get("code") != 200:
+                raise Exception(f"KieAI error: {data.get('msg', 'unknown')}")
+            return data["data"]["taskId"]
+
+
+async def poll_kie_task(task_id: str, timeout: int = 120) -> str:
+    """Polls until task completes, returns image URL."""
+    deadline = asyncio.get_event_loop().time() + timeout
+    async with aiohttp.ClientSession() as session:
+        while asyncio.get_event_loop().time() < deadline:
+            async with session.get(
+                f"{KIE_BASE}/api/v1/jobs/getTaskDetail",
+                headers=HEADERS,
+                params={"taskId": task_id},
+                timeout=aiohttp.ClientTimeout(total=15)
+            ) as resp:
+                data = await resp.json()
+                if data.get("code") != 200:
+                    raise Exception(f"Poll error: {data.get('msg')}")
+
+                task = data.get("data", {})
+                status = task.get("status")
+
+                if status == "succeed":
+                    # Image URL is inside output list
+                    outputs = task.get("output", [])
+                    if outputs:
+                        return outputs[0].get("url") or outputs[0].get("imageUrl")
+                    raise Exception("Task succeeded but no image URL found")
+
+                elif status == "failed":
+                    raise Exception(f"Task failed: {task.get('failReason', 'unknown reason')}")
+
+            await asyncio.sleep(3)
+
+    raise Exception("Generation timed out after 120 seconds")
 
 
 async def do_generate(message: Message, state: FSMContext,
@@ -55,37 +146,18 @@ async def do_generate(message: Message, state: FSMContext,
                 [InlineKeyboardButton(text=t(lang, "btn_add_credits"), callback_data="go_balance")]
             ])
         )
-
         await state.set_state(None)
         return
 
-    model  = MODEL_MAP.get(model_key, "flux")
-    size   = QUALITY_MAP.get(quality_key, 1024)
-    ratio  = RATIO_MAP.get(ratio_key, "1:1")
-
-    if ratio == "1:1":
-        width, height = size, size
-    elif ratio == "16:9":
-        width, height = size, int(size * 9 / 16)
-    elif ratio == "9:16":
-        width, height = int(size * 9 / 16), size
-    else:
-        width, height = size, size
-
-    encoded_prompt = urllib.parse.quote(prompt)
-    image_url = (
-        f"https://image.pollinations.ai/prompt/{encoded_prompt}"
-        f"?model={model}&width={width}&height={height}&nologo=true&seed={hash(prompt) % 99999}"
-    )
+    model   = MODEL_MAP.get(model_key, "google/nano-banana")
+    quality = QUALITY_MAP.get(quality_key, "1K")
+    ratio   = RATIO_MAP.get(ratio_key, "1:1")
 
     wait_msg = await message.answer(t(lang, "generating"))
 
     try:
-        connector = aiohttp.TCPConnector(ssl=False)
-        async with aiohttp.ClientSession(connector=connector) as session:
-            async with session.get(image_url, timeout=aiohttp.ClientTimeout(total=60)) as resp:
-                if resp.status != 200:
-                    raise Exception(f"HTTP {resp.status}")
+        task_id   = await create_kie_task(model, prompt, ratio, quality)
+        image_url = await poll_kie_task(task_id)
 
         new_balance = await deduct_credits(message.from_user.id, cost)
         await log_generation(message.from_user.id, model_key, quality_key, ratio_key, prompt, cost)
@@ -99,8 +171,6 @@ async def do_generate(message: Message, state: FSMContext,
                       cost=cost, balance=new_balance),
             reply_markup=after_gen_keyboard(lang)
         )
-
-        # Set state to None but KEEP the data so repeat works
         await state.set_state(None)
 
     except ValueError:
@@ -113,6 +183,7 @@ async def do_generate(message: Message, state: FSMContext,
         await state.set_state(None)
 
 
+# ── FSM flow ──────────────────────────────────────────────
 
 @router.callback_query(GenerateState.choosing_model, F.data.startswith("model"))
 async def choose_model(callback: CallbackQuery, state: FSMContext):
@@ -147,7 +218,6 @@ async def choose_ratio(callback: CallbackQuery, state: FSMContext):
 async def get_prompt(message: Message, state: FSMContext):
     lang = await get_lang(message.from_user.id)
     data = await state.get_data()
-    # Save prompt into state so repeat can access it
     await state.update_data(last_prompt=message.text)
     await do_generate(
         message, state,
@@ -159,7 +229,7 @@ async def get_prompt(message: Message, state: FSMContext):
     )
 
 
-
+# ── Post-generation buttons ───────────────────────────────
 
 @router.callback_query(lambda c: c.data == "repeat_gen")
 async def repeat_generation(callback: CallbackQuery, state: FSMContext):
@@ -187,7 +257,6 @@ async def repeat_generation(callback: CallbackQuery, state: FSMContext):
 async def go_generate(callback: CallbackQuery, state: FSMContext):
     lang = await get_lang(callback.from_user.id)
     from keyboards import model_keyboard
-
     await state.clear()
     await callback.message.answer(t(lang, "choose_model"), reply_markup=model_keyboard())
     await state.set_state(GenerateState.choosing_model)

@@ -10,7 +10,7 @@ async def main():
     dp = Dispatcher()
 
     dp.include_router(start.router)
-    dp.include_router(payment.router)   # payment before generate
+    dp.include_router(payment.router)
     dp.include_router(generate.router)
 
     print("Bot is running...")
