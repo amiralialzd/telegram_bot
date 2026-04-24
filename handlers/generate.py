@@ -20,8 +20,7 @@ KIE_BASE    = "https://api.kie.ai"
 
 MODEL_MAP = {
     "model_pro": "nano-banana-2",
-    "model_v2":  "google/nano-banana",
-}
+    "model_v2":  "google/nano-banana",  }
 
 QUALITY_MAP = {
     "q_1k": "1K",
@@ -168,25 +167,46 @@ async def do_generate(message: Message, state: FSMContext,
         new_balance = await deduct_credits(uid, cost)
         await log_generation(uid, model_key, quality_key, ratio_key, prompt, cost)
 
-        await wait_msg.delete()
-        await message.answer_photo(
-            photo=URLInputFile(image_url),
-            caption=t(lang, "done",
-                      model=model_key, quality=quality_key,
-                      ratio=ratio, prompt=prompt,
-                      cost=cost, balance=new_balance),
-            reply_markup=after_gen_keyboard(lang)
-        )
+        try:
+            await wait_msg.delete()
+        except Exception:
+            pass
+
+        caption = t(lang, "done",
+                    model=model_key, quality=quality_key,
+                    ratio=ratio, prompt=prompt,
+                    cost=cost, balance=new_balance)
+
+
+        try:
+            await message.answer_photo(
+                photo=URLInputFile(image_url),
+                caption=caption,
+                reply_markup=after_gen_keyboard(lang)
+            )
+        except Exception:
+            await message.answer_document(
+                document=URLInputFile(image_url, filename="generated.png"),
+                caption=caption,
+                reply_markup=after_gen_keyboard(lang)
+            )
         await state.set_state(None)
 
     except ValueError:
-        await wait_msg.delete()
+        try:
+            await wait_msg.delete()
+        except Exception:
+            pass
         await message.answer(t(lang, "no_credits_gen", cost=cost, balance=0))
         await state.set_state(None)
     except Exception as e:
-        await wait_msg.delete()
+        try:
+            await wait_msg.delete()
+        except Exception:
+            pass
         await message.answer(t(lang, "gen_failed", error=str(e)))
         await state.set_state(None)
+
 
 
 
