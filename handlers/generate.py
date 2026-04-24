@@ -74,7 +74,7 @@ def skip_image_keyboard(lang: str) -> InlineKeyboardMarkup:
 
 
 async def upload_image_to_kie(image_bytes: bytes, filename: str = "image.jpg") -> str:
-    """Uploads image bytes to KieAI File Upload API, returns fileUrl."""
+
     upload_headers = {"Authorization": f"Bearer {KIE_API_KEY}"}
     data = aiohttp.FormData()
     data.add_field("file", image_bytes, filename=filename, content_type="image/jpeg")
@@ -88,13 +88,13 @@ async def upload_image_to_kie(image_bytes: bytes, filename: str = "image.jpg") -
         ) as resp:
             result = await resp.json()
             if not result.get("success") and result.get("code") != 200:
-                raise Exception(f"Upload failed: {result.get('msg', 'unknown')}")
+                raise Exception(f"Upload failed: {result}")
             return result["data"]["fileUrl"]
 
 
 async def create_kie_task(model: str, prompt: str, ratio: str,
                           quality: str, image_url: str = None) -> str:
-    """Submits generation task, returns taskId."""
+
     if model == "nano-banana-pro":
         input_body = {
             "prompt": prompt,
@@ -221,6 +221,7 @@ async def do_generate(message: Message, state: FSMContext,
             pass
         await message.answer(t(lang, "gen_failed", error=str(e)))
         await state.set_state(None)
+
 
 
 
