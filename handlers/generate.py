@@ -1,5 +1,6 @@
 import asyncio
 import aiohttp
+import json
 import os
 
 from aiogram import Router, F
@@ -67,8 +68,8 @@ def after_gen_keyboard(lang: str) -> InlineKeyboardMarkup:
 
 
 async def create_kie_task(model: str, prompt: str, ratio: str, quality: str) -> str:
-    """Submits generation task to KieAI, returns taskId."""
-    # nano-banana-2 uses 'resolution' + 'aspect_ratio', google/nano-banana uses 'image_size'
+
+
     if model == "nano-banana-2":
         input_body = {
             "prompt": prompt,
@@ -100,12 +101,12 @@ async def create_kie_task(model: str, prompt: str, ratio: str, quality: str) -> 
 
 
 async def poll_kie_task(task_id: str, timeout: int = 120) -> str:
-    """Polls until task completes, returns image URL."""
+
     deadline = asyncio.get_event_loop().time() + timeout
     async with aiohttp.ClientSession() as session:
         while asyncio.get_event_loop().time() < deadline:
             async with session.get(
-                f"{KIE_BASE}/api/v1/jobs/getTaskDetail",
+                f"{KIE_BASE}/api/v1/jobs/recordInfo",
                 headers=HEADERS,
                 params={"taskId": task_id},
                 timeout=aiohttp.ClientTimeout(total=15)
@@ -114,18 +115,22 @@ async def poll_kie_task(task_id: str, timeout: int = 120) -> str:
                 if data.get("code") != 200:
                     raise Exception(f"Poll error: {data.get('msg')}")
 
-                task = data.get("data", {})
-                status = task.get("status")
+                task  = data.get("data", {})
+                state = task.get("state")
 
-                if status == "succeed":
-                    # Image URL is inside output list
-                    outputs = task.get("output", [])
-                    if outputs:
-                        return outputs[0].get("url") or outputs[0].get("imageUrl")
+                if state == "success":
+
+                    result_json = task.get("resultJson", "{}")
+                    result = json.loads(result_json)
+                    urls = result.get("resultUrls", [])
+                    if urls:
+                        return urls[0]
                     raise Exception("Task succeeded but no image URL found")
 
-                elif status == "failed":
-                    raise Exception(f"Task failed: {task.get('failReason', 'unknown reason')}")
+                elif state == "fail":
+                    raise Exception(f"Task failed: {task.get('failMsg', 'unknown reason')}")
+
+
 
             await asyncio.sleep(3)
 
@@ -183,7 +188,7 @@ async def do_generate(message: Message, state: FSMContext,
         await state.set_state(None)
 
 
-# ── FSM flow ──────────────────────────────────────────────
+
 
 @router.callback_query(GenerateState.choosing_model, F.data.startswith("model"))
 async def choose_model(callback: CallbackQuery, state: FSMContext):
@@ -229,7 +234,7 @@ async def get_prompt(message: Message, state: FSMContext):
     )
 
 
-# ── Post-generation buttons ───────────────────────────────
+
 
 @router.callback_query(lambda c: c.data == "repeat_gen")
 async def repeat_generation(callback: CallbackQuery, state: FSMContext):
