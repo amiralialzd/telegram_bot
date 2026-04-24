@@ -20,7 +20,8 @@ KIE_BASE    = "https://api.kie.ai"
 
 MODEL_MAP = {
     "model_pro": "nano-banana-2",
-    "model_v2":  "google/nano-banana",  }
+    "model_v2":  "google/nano-banana",
+}
 
 QUALITY_MAP = {
     "q_1k": "1K",
@@ -117,7 +118,7 @@ async def poll_kie_task(task_id: str, timeout: int = 120) -> str:
                 state = task.get("state")
 
                 if state == "success":
-                    # resultJson is a JSON string containing resultUrls
+
                     result_json = task.get("resultJson", "{}")
                     result = json.loads(result_json)
                     urls = result.get("resultUrls", [])
@@ -174,10 +175,10 @@ async def do_generate(message: Message, state: FSMContext,
 
         caption = t(lang, "done",
                     model=model_key, quality=quality_key,
-                    ratio=ratio, prompt=prompt,
+                    ratio=ratio,
                     cost=cost, balance=new_balance)
 
-
+        # Try sending as photo first; fall back to document if too large
         try:
             await message.answer_photo(
                 photo=URLInputFile(image_url),
