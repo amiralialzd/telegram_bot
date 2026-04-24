@@ -7,6 +7,10 @@ TEXTS = {
         "choose_quality": "Kaliteyi seç:",
         "choose_ratio": "En-boy oranını seç:",
         "prompt_cost": "✏️ Promptunu yaz.\n💰 Bu işlem <b>{cost} kredi</b> tutacak.",
+        "ask_image": "📎 İsterseniz bir referans fotoğraf gönderin, ardından promptunuzu yazın.\nSadece metin göndermek için promptunuzu doğrudan yazabilirsiniz.\n💰 Bu işlem <b>{cost} kredi</b> tutacak.",
+        "image_received": "✅ Fotoğraf alındı! Şimdi promptunuzu yazın:",
+        "skip_image": "⏭️ Fotoğrafsız devam et",
+        "uploading_image": "📤 Fotoğraf yükleniyor...",
         "generating": "⏳ Görseliniz oluşturuluyor, lütfen bekleyin...",
         "done": "✅ <b>Tamamlandı!</b>\n<b>Model:</b> {model}\n<b>Kalite:</b> {quality}\n<b>Oran:</b> {ratio}\n\n💰 Harcanan: <b>{cost} kredi</b> | Kalan: <b>{balance} kredi</b>",
         "no_credits_gen": "❌ <b>Yetersiz kredi!</b>\n\nBu işlem <b>{cost} kredi</b> tutar.\nBakiyen: <b>{balance} kredi</b>.\n\nLütfen bakiyeni yükselt.",
@@ -14,7 +18,7 @@ TEXTS = {
         "balance_msg": "💳 <b>Bakiyen</b>\n\nKalan kredi: <b>{credits}</b>\n\nPaket seç:",
         "payment_success": "✅ <b>Ödeme başarılı!</b>\n\nEklendi: <b>{credits} kredi</b>\nYeni bakiye: <b>{balance} kredi</b>\n\n🎨 Oluşturmaya başlamak için /start",
         "lang_changed": "🇹🇷 Dil Türkçe olarak ayarlandı.",
-        # Buttons
+
         "btn_generate": "🎨 Görsel Oluştur",
         "btn_balance": "💳 Bakiye & Yükselt",
         "btn_repeat": "🔁 Tekrar Oluştur",
@@ -31,6 +35,10 @@ TEXTS = {
         "choose_quality": "Choose quality:",
         "choose_ratio": "Choose aspect ratio:",
         "prompt_cost": "✏️ Write your prompt.\n💰 This generation will cost <b>{cost} credits</b>.",
+        "ask_image": "📎 Optionally send a reference photo, then write your prompt.\nOr just type your prompt directly to skip the image.\n💰 This generation will cost <b>{cost} credits</b>.",
+        "image_received": "✅ Photo received! Now write your prompt:",
+        "skip_image": "⏭️ Continue without photo",
+        "uploading_image": "📤 Uploading photo...",
         "generating": "⏳ Generating your image, please wait...",
         "done": "✅ <b>Done!</b>\n<b>Model:</b> {model}\n<b>Quality:</b> {quality}\n<b>Ratio:</b> {ratio}\n\n💰 Spent: <b>{cost} credits</b> | Remaining: <b>{balance} credits</b>",
         "no_credits_gen": "❌ <b>Insufficient credits!</b>\n\nThis generation costs <b>{cost} credits</b>.\nYour balance: <b>{balance} credits</b>.\n\nPlease top up your balance.",
@@ -38,7 +46,7 @@ TEXTS = {
         "balance_msg": "💳 <b>Your Balance</b>\n\nCredits remaining: <b>{credits}</b>\n\nChoose a package:",
         "payment_success": "✅ <b>Payment successful!</b>\n\nAdded: <b>{credits} credits</b>\nNew balance: <b>{balance} credits</b>\n\n🎨 Start generating with /start",
         "lang_changed": "🇬🇧 Language set to English.",
-        # Buttons
+
         "btn_generate": "🎨 Image Generation",
         "btn_balance": "💳 Balance & Top Up",
         "btn_repeat": "🔁 Repeat Prompt",

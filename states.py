@@ -4,4 +4,5 @@ class GenerateState(StatesGroup):
     choosing_model = State()
     choosing_quality = State()
     choosing_ratio = State()
+    waiting_image = State()
     waiting_prompt = State()

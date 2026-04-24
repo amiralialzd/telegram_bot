@@ -3,7 +3,7 @@ import aiohttp
 import json
 import os
 
-from aiogram import Router, F
+from aiogram import Router, F, Bot
 from aiogram.types import CallbackQuery, Message, URLInputFile, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.fsm.context import FSMContext
 
@@ -14,27 +14,24 @@ from texts import t
 
 router = Router()
 
-KIE_API_KEY = os.getenv("KIE_API_KEY")
-KIE_BASE    = "https://api.kie.ai"
-
+KIE_API_KEY  = os.getenv("KIE_API_KEY")
+KIE_BASE     = "https://api.kie.ai"
+KIE_UPLOAD   = "https://kieai.redpandaai.co"
 
 MODEL_MAP = {
-    "model_pro": "nano-banana-2",
+    "model_pro": "nano-banana-pro",
     "model_v2":  "google/nano-banana",
 }
-
 QUALITY_MAP = {
     "q_1k": "1K",
     "q_2k": "2K",
     "q_4k": "4K",
 }
-
 RATIO_MAP = {
     "r_1_1":  "1:1",
     "r_9_16": "9:16",
     "r_16_9": "16:9",
 }
-
 CREDIT_COST = {
     ("model_pro", "q_1k"): 12,
     ("model_pro", "q_2k"): 12,
@@ -48,6 +45,9 @@ HEADERS = {
     "Authorization": f"Bearer {KIE_API_KEY}",
     "Content-Type": "application/json",
 }
+
+
+SUPPORTS_IMAGE = {"model_pro"}
 
 
 async def get_lang(telegram_id: int) -> str:
@@ -67,15 +67,41 @@ def after_gen_keyboard(lang: str) -> InlineKeyboardMarkup:
     ])
 
 
-async def create_kie_task(model: str, prompt: str, ratio: str, quality: str) -> str:
+def skip_image_keyboard(lang: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=t(lang, "skip_image"), callback_data="skip_image")]
+    ])
 
-    if model == "nano-banana-2":
+
+async def upload_image_to_kie(image_bytes: bytes, filename: str = "image.jpg") -> str:
+    """Uploads image bytes to KieAI File Upload API, returns fileUrl."""
+    upload_headers = {"Authorization": f"Bearer {KIE_API_KEY}"}
+    data = aiohttp.FormData()
+    data.add_field("file", image_bytes, filename=filename, content_type="image/jpeg")
+
+    async with aiohttp.ClientSession() as session:
+        async with session.post(
+            f"{KIE_UPLOAD}/api/upload/file-stream",
+            headers=upload_headers,
+            data=data,
+            timeout=aiohttp.ClientTimeout(total=30)
+        ) as resp:
+            result = await resp.json()
+            if not result.get("success") and result.get("code") != 200:
+                raise Exception(f"Upload failed: {result.get('msg', 'unknown')}")
+            return result["data"]["fileUrl"]
+
+
+async def create_kie_task(model: str, prompt: str, ratio: str,
+                          quality: str, image_url: str = None) -> str:
+    """Submits generation task, returns taskId."""
+    if model == "nano-banana-pro":
         input_body = {
             "prompt": prompt,
             "aspect_ratio": ratio,
             "resolution": quality,
             "output_format": "png",
-            "image_input": []
+            "image_input": [image_url] if image_url else [],
         }
     else:
         input_body = {
@@ -84,13 +110,11 @@ async def create_kie_task(model: str, prompt: str, ratio: str, quality: str) -> 
             "output_format": "png",
         }
 
-    payload = {"model": model, "input": input_body}
-
     async with aiohttp.ClientSession() as session:
         async with session.post(
             f"{KIE_BASE}/api/v1/jobs/createTask",
             headers=HEADERS,
-            json=payload,
+            json={"model": model, "input": input_body},
             timeout=aiohttp.ClientTimeout(total=30)
         ) as resp:
             data = await resp.json()
@@ -99,8 +123,8 @@ async def create_kie_task(model: str, prompt: str, ratio: str, quality: str) -> 
             return data["data"]["taskId"]
 
 
-async def poll_kie_task(task_id: str, timeout: int = 120) -> str:
-    """Polls until task completes, returns image URL."""
+async def poll_kie_task(task_id: str, timeout: int = 300) -> str:
+
     deadline = asyncio.get_event_loop().time() + timeout
     async with aiohttp.ClientSession() as session:
         while asyncio.get_event_loop().time() < deadline:
@@ -113,33 +137,25 @@ async def poll_kie_task(task_id: str, timeout: int = 120) -> str:
                 data = await resp.json()
                 if data.get("code") != 200:
                     raise Exception(f"Poll error: {data.get('msg')}")
-
                 task  = data.get("data", {})
                 state = task.get("state")
-
                 if state == "success":
-
                     result_json = task.get("resultJson", "{}")
                     result = json.loads(result_json)
                     urls = result.get("resultUrls", [])
                     if urls:
                         return urls[0]
                     raise Exception("Task succeeded but no image URL found")
-
                 elif state == "fail":
-                    raise Exception(f"Task failed: {task.get('failMsg', 'unknown reason')}")
-
-
-
+                    raise Exception(f"Task failed: {task.get('failMsg', 'unknown')}")
             await asyncio.sleep(3)
-
-    raise Exception("Generation timed out after 120 seconds")
+    raise Exception("Generation timed out after 5 minutes")
 
 
 async def do_generate(message: Message, state: FSMContext,
                       model_key: str, quality_key: str, ratio_key: str,
-                      prompt: str, lang: str, user_id: int = None):
-
+                      prompt: str, lang: str, user_id: int = None,
+                      image_url: str = None):
     uid  = user_id or message.from_user.id
     cost = CREDIT_COST.get((model_key, quality_key), 17)
 
@@ -162,8 +178,8 @@ async def do_generate(message: Message, state: FSMContext,
     wait_msg = await message.answer(t(lang, "generating"))
 
     try:
-        task_id   = await create_kie_task(model, prompt, ratio, quality)
-        image_url = await poll_kie_task(task_id, timeout=300)
+        task_id   = await create_kie_task(model, prompt, ratio, quality, image_url)
+        image_out = await poll_kie_task(task_id)
 
         new_balance = await deduct_credits(uid, cost)
         await log_generation(uid, model_key, quality_key, ratio_key, prompt, cost)
@@ -175,19 +191,17 @@ async def do_generate(message: Message, state: FSMContext,
 
         caption = t(lang, "done",
                     model=model_key, quality=quality_key,
-                    ratio=ratio,
-                    cost=cost, balance=new_balance)
+                    ratio=ratio, cost=cost, balance=new_balance)
 
-        # Try sending as photo first; fall back to document if too large
         try:
             await message.answer_photo(
-                photo=URLInputFile(image_url),
+                photo=URLInputFile(image_out),
                 caption=caption,
                 reply_markup=after_gen_keyboard(lang)
             )
         except Exception:
             await message.answer_document(
-                document=URLInputFile(image_url, filename="generated.png"),
+                document=URLInputFile(image_out, filename="generated.png"),
                 caption=caption,
                 reply_markup=after_gen_keyboard(lang)
             )
@@ -207,7 +221,6 @@ async def do_generate(message: Message, state: FSMContext,
             pass
         await message.answer(t(lang, "gen_failed", error=str(e)))
         await state.set_state(None)
-
 
 
 
@@ -231,13 +244,91 @@ async def choose_quality(callback: CallbackQuery, state: FSMContext):
 
 @router.callback_query(GenerateState.choosing_ratio, F.data.startswith("r_"))
 async def choose_ratio(callback: CallbackQuery, state: FSMContext):
-    lang = await get_lang(callback.from_user.id)
-    data = await state.get_data()
+    lang  = await get_lang(callback.from_user.id)
+    data  = await state.get_data()
     await state.update_data(ratio=callback.data)
+    cost  = CREDIT_COST.get((data.get("model"), data.get("quality")), 17)
+    model_key = data.get("model")
+
+    if model_key in SUPPORTS_IMAGE:
+
+        await callback.message.answer(
+            t(lang, "ask_image", cost=cost),
+            reply_markup=skip_image_keyboard(lang)
+        )
+        await state.set_state(GenerateState.waiting_image)
+    else:
+
+        await callback.message.answer(t(lang, "prompt_cost", cost=cost))
+        await state.set_state(GenerateState.waiting_prompt)
+
+    await callback.answer()
+
+
+
+@router.message(GenerateState.waiting_image, F.photo)
+async def receive_image(message: Message, state: FSMContext, bot: Bot):
+    lang = await get_lang(message.from_user.id)
+
+    upload_msg = await message.answer(t(lang, "uploading_image"))
+
+    try:
+
+        photo = message.photo[-1]
+        file  = await bot.get_file(photo.file_id)
+        # Download as bytes
+        file_bytes = await bot.download_file(file.file_path)
+        image_bytes = file_bytes.read()
+
+
+        kie_image_url = await upload_image_to_kie(image_bytes)
+        await state.update_data(image_url=kie_image_url)
+
+        try:
+            await upload_msg.delete()
+        except Exception:
+            pass
+
+        await message.answer(t(lang, "image_received"))
+        await state.set_state(GenerateState.waiting_prompt)
+
+    except Exception as e:
+        try:
+            await upload_msg.delete()
+        except Exception:
+            pass
+        await message.answer(f"❌ {'Fotoğraf yüklenemedi' if lang == 'tr' else 'Failed to upload photo'}: {e}")
+        await state.set_state(GenerateState.waiting_prompt)
+
+
+
+@router.callback_query(lambda c: c.data == "skip_image")
+async def skip_image(callback: CallbackQuery, state: FSMContext):
+    lang = await get_lang(callback.from_user.id)
+    await state.update_data(image_url=None)
+    data = await state.get_data()
     cost = CREDIT_COST.get((data.get("model"), data.get("quality")), 17)
     await callback.message.answer(t(lang, "prompt_cost", cost=cost))
     await state.set_state(GenerateState.waiting_prompt)
     await callback.answer()
+
+
+
+@router.message(GenerateState.waiting_image, F.text)
+async def image_state_text(message: Message, state: FSMContext):
+    lang = await get_lang(message.from_user.id)
+    data = await state.get_data()
+    await state.update_data(image_url=None, last_prompt=message.text)
+    await do_generate(
+        message, state,
+        model_key=data.get("model"),
+        quality_key=data.get("quality"),
+        ratio_key=data.get("ratio"),
+        prompt=message.text,
+        lang=lang,
+        user_id=message.from_user.id,
+        image_url=None
+    )
 
 
 @router.message(GenerateState.waiting_prompt)
@@ -252,7 +343,8 @@ async def get_prompt(message: Message, state: FSMContext):
         ratio_key=data.get("ratio"),
         prompt=message.text,
         lang=lang,
-        user_id=message.from_user.id
+        user_id=message.from_user.id,
+        image_url=data.get("image_url")
     )
 
 
@@ -267,6 +359,7 @@ async def repeat_generation(callback: CallbackQuery, state: FSMContext):
     quality_key = data.get("quality")
     ratio_key   = data.get("ratio")
     prompt      = data.get("last_prompt")
+    image_url   = data.get("image_url")
 
     if not all([model_key, quality_key, ratio_key, prompt]):
         await callback.answer(
@@ -277,8 +370,13 @@ async def repeat_generation(callback: CallbackQuery, state: FSMContext):
         return
 
     await callback.answer()
-
-    await do_generate(callback.message, state, model_key, quality_key, ratio_key, prompt, lang, user_id=callback.from_user.id)
+    await do_generate(
+        callback.message, state,
+        model_key, quality_key, ratio_key,
+        prompt, lang,
+        user_id=callback.from_user.id,
+        image_url=image_url
+    )
 
 
 @router.callback_query(lambda c: c.data == "go_generate")
