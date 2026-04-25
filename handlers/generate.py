@@ -269,7 +269,6 @@ async def choose_ratio(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
-
 @router.message(GenerateState.waiting_image, F.photo)
 async def receive_image(message: Message, state: FSMContext, bot: Bot):
     lang = await get_lang(message.from_user.id)
@@ -280,7 +279,7 @@ async def receive_image(message: Message, state: FSMContext, bot: Bot):
 
         photo = message.photo[-1]
         file  = await bot.get_file(photo.file_id)
-        # Download as bytes
+
         file_bytes = await bot.download_file(file.file_path)
         image_bytes = file_bytes.read()
 
@@ -315,7 +314,6 @@ async def skip_image(callback: CallbackQuery, state: FSMContext):
     await callback.message.answer(t(lang, "prompt_cost", cost=cost))
     await state.set_state(GenerateState.waiting_prompt)
     await callback.answer()
-
 
 
 @router.message(GenerateState.waiting_image, F.text)
