@@ -90,7 +90,7 @@ async def upload_image_to_kie(image_bytes: bytes, filename: str = "image.jpg") -
             result = await resp.json()
             if not result.get("success") and result.get("code") != 200:
                 raise Exception(f"Upload failed: {result}")
-            raise Exception(f"DEBUG full response: {result}")
+            return result["data"]["downloadUrl"]
 
 
 async def create_kie_task(model: str, prompt: str, ratio: str,
@@ -125,7 +125,7 @@ async def create_kie_task(model: str, prompt: str, ratio: str,
 
 
 async def poll_kie_task(task_id: str, timeout: int = 300) -> str:
-
+    """Polls until task completes, returns image URL."""
     deadline = asyncio.get_event_loop().time() + timeout
     async with aiohttp.ClientSession() as session:
         while asyncio.get_event_loop().time() < deadline:
@@ -278,10 +278,9 @@ async def receive_image(message: Message, state: FSMContext, bot: Bot):
 
         photo = message.photo[-1]
         file  = await bot.get_file(photo.file_id)
-
+        # Download as bytes
         file_bytes = await bot.download_file(file.file_path)
         image_bytes = file_bytes.read()
-
 
         kie_image_url = await upload_image_to_kie(image_bytes)
         await state.update_data(image_url=kie_image_url)
@@ -303,6 +302,7 @@ async def receive_image(message: Message, state: FSMContext, bot: Bot):
         await state.set_state(GenerateState.waiting_prompt)
 
 
+
 @router.callback_query(lambda c: c.data == "skip_image")
 async def skip_image(callback: CallbackQuery, state: FSMContext):
     lang = await get_lang(callback.from_user.id)
@@ -314,7 +314,7 @@ async def skip_image(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
-
+# User sends text in waiting_image state (skips image implicitly)
 @router.message(GenerateState.waiting_image, F.text)
 async def image_state_text(message: Message, state: FSMContext):
     lang = await get_lang(message.from_user.id)
