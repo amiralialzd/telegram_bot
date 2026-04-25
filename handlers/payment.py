@@ -10,8 +10,6 @@ from texts import t
 router = Router()
 
 PACKAGES = [
-    {"stars": 30,   "credits": 30},
-    {"stars": 50,   "credits": 50},
     {"stars": 100,  "credits": 100},
     {"stars": 250,  "credits": 250},
     {"stars": 1000, "credits": 1000},
