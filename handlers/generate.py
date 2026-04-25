@@ -47,7 +47,7 @@ HEADERS = {
 }
 
 
-SUPPORTS_IMAGE = {"model_pro"}
+SUPPORTS_IMAGE = {"model_pro", "model_v2"}
 
 
 async def get_lang(telegram_id: int) -> str:
@@ -107,8 +107,10 @@ async def create_kie_task(model: str, prompt: str, ratio: str,
     else:
         input_body = {
             "prompt": prompt,
-            "image_size": ratio,
+            "aspect_ratio": ratio,
+            "resolution": quality,
             "output_format": "png",
+            "image_input": [image_url] if image_url else [],
         }
 
     async with aiohttp.ClientSession() as session:
@@ -125,7 +127,7 @@ async def create_kie_task(model: str, prompt: str, ratio: str,
 
 
 async def poll_kie_task(task_id: str, timeout: int = 300) -> str:
-    """Polls until task completes, returns image URL."""
+
     deadline = asyncio.get_event_loop().time() + timeout
     async with aiohttp.ClientSession() as session:
         while asyncio.get_event_loop().time() < deadline:
@@ -282,6 +284,7 @@ async def receive_image(message: Message, state: FSMContext, bot: Bot):
         file_bytes = await bot.download_file(file.file_path)
         image_bytes = file_bytes.read()
 
+
         kie_image_url = await upload_image_to_kie(image_bytes)
         await state.update_data(image_url=kie_image_url)
 
@@ -314,7 +317,7 @@ async def skip_image(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
-# User sends text in waiting_image state (skips image implicitly)
+
 @router.message(GenerateState.waiting_image, F.text)
 async def image_state_text(message: Message, state: FSMContext):
     lang = await get_lang(message.from_user.id)
