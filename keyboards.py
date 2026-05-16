@@ -4,7 +4,10 @@ def model_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[
         [
             InlineKeyboardButton(text="Nano Banana Pro", callback_data="model_pro"),
-            InlineKeyboardButton(text="Nano Banana 2", callback_data="model_v2")
+            InlineKeyboardButton(text="Nano Banana 2",   callback_data="model_v2"),
+        ],
+        [
+            InlineKeyboardButton(text="GPT Image 2",     callback_data="model_gpt2"),
         ]
     ])
 
@@ -13,15 +16,27 @@ def quality_keyboard():
         [
             InlineKeyboardButton(text="1K", callback_data="q_1k"),
             InlineKeyboardButton(text="2K", callback_data="q_2k"),
-            InlineKeyboardButton(text="4K", callback_data="q_4k")
+            InlineKeyboardButton(text="4K", callback_data="q_4k"),
         ]
     ])
 
 def ratio_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[
         [
-            InlineKeyboardButton(text="1:1", callback_data="r_1_1"),
+            InlineKeyboardButton(text="1:1",  callback_data="r_1_1"),
             InlineKeyboardButton(text="9:16", callback_data="r_9_16"),
-            InlineKeyboardButton(text="16:9", callback_data="r_16_9")
+            InlineKeyboardButton(text="16:9", callback_data="r_16_9"),
+        ]
+    ])
+
+def language_keyboard():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="🇹🇷 Türkçe",  callback_data="lang_tr"),
+            InlineKeyboardButton(text="🇬🇧 English", callback_data="lang_en"),
+        ],
+        [
+            InlineKeyboardButton(text="🇷🇺 Русский", callback_data="lang_ru"),
+            InlineKeyboardButton(text="☀️🦁 فارسی",   callback_data="lang_fa"),
         ]
     ])

@@ -14,32 +14,9 @@ from texts import t
 
 router = Router()
 
-KIE_API_KEY  = os.getenv("KIE_API_KEY")
-KIE_BASE     = "https://api.kie.ai"
-KIE_UPLOAD   = "https://kieai.redpandaai.co"
-
-MODEL_MAP = {
-    "model_pro": "nano-banana-pro",
-    "model_v2":  "google/nano-banana",
-}
-QUALITY_MAP = {
-    "q_1k": "1K",
-    "q_2k": "2K",
-    "q_4k": "4K",
-}
-RATIO_MAP = {
-    "r_1_1":  "1:1",
-    "r_9_16": "9:16",
-    "r_16_9": "16:9",
-}
-CREDIT_COST = {
-    ("model_pro", "q_1k"): 12,
-    ("model_pro", "q_2k"): 12,
-    ("model_pro", "q_4k"): 16,
-    ("model_v2",  "q_1k"): 6,
-    ("model_v2",  "q_2k"): 8,
-    ("model_v2",  "q_4k"): 12,
-}
+KIE_API_KEY = os.getenv("KIE_API_KEY")
+KIE_BASE    = "https://api.kie.ai"
+KIE_UPLOAD  = "https://kieai.redpandaai.co"
 
 HEADERS = {
     "Authorization": f"Bearer {KIE_API_KEY}",
@@ -47,7 +24,31 @@ HEADERS = {
 }
 
 
-SUPPORTS_IMAGE = {"model_pro", "model_v2"}
+MODEL_CONFIG = {
+    "model_pro":  {"t2i": "nano-banana-pro",              "i2i": "google/nano-banana-edit", "has_quality": True},
+    "model_v2":   {"t2i": "nano-banana-2",                "i2i": "google/nano-banana-edit", "has_quality": True},
+    "model_gpt2": {"t2i": "gpt-image-2-text-to-image",    "i2i": "gpt-image-2-image-to-image", "has_quality": False},
+}
+
+QUALITY_MAP = {"q_1k": "1K", "q_2k": "2K", "q_4k": "4K"}
+RATIO_MAP   = {"r_1_1": "1:1", "r_9_16": "9:16", "r_16_9": "16:9"}
+
+CREDIT_COST = {
+    ("model_pro",  "q_1k"): 12,
+    ("model_pro",  "q_2k"): 12,
+    ("model_pro",  "q_4k"): 16,
+    ("model_v2",   "q_1k"): 6,
+    ("model_v2",   "q_2k"): 8,
+    ("model_v2",   "q_4k"): 12,
+    ("model_gpt2", "q_1k"): 4,
+    ("model_gpt2", "q_2k"): 7,
+    ("model_gpt2", "q_4k"): 11,
+
+    ("model_gpt2", None):   4,
+}
+
+
+SUPPORTS_IMAGE = {"model_pro", "model_v2", "model_gpt2"}
 
 
 async def get_lang(telegram_id: int) -> str:
@@ -61,9 +62,7 @@ def after_gen_keyboard(lang: str) -> InlineKeyboardMarkup:
             InlineKeyboardButton(text=t(lang, "btn_repeat"),  callback_data="repeat_gen"),
             InlineKeyboardButton(text=t(lang, "btn_restart"), callback_data="go_generate"),
         ],
-        [
-            InlineKeyboardButton(text=t(lang, "btn_show_balance"), callback_data="go_balance"),
-        ]
+        [InlineKeyboardButton(text=t(lang, "btn_show_balance"), callback_data="go_balance")]
     ])
 
 
@@ -74,12 +73,10 @@ def skip_image_keyboard(lang: str) -> InlineKeyboardMarkup:
 
 
 async def upload_image_to_kie(image_bytes: bytes, filename: str = "image.jpg") -> str:
-
     upload_headers = {"Authorization": f"Bearer {KIE_API_KEY}"}
     data = aiohttp.FormData()
     data.add_field("file", image_bytes, filename=filename, content_type="image/jpeg")
     data.add_field("uploadPath", "images")
-
     async with aiohttp.ClientSession() as session:
         async with session.post(
             f"{KIE_UPLOAD}/api/file-stream-upload",
@@ -93,31 +90,35 @@ async def upload_image_to_kie(image_bytes: bytes, filename: str = "image.jpg") -
             return result["data"]["downloadUrl"]
 
 
-async def create_kie_task(model: str, prompt: str, ratio: str,
+async def create_kie_task(model_key: str, prompt: str, ratio: str,
                           quality: str, image_url: str = None) -> str:
+    cfg = MODEL_CONFIG[model_key]
 
-    if model == "nano-banana-pro":
-        input_body = {
-            "prompt": prompt,
-            "aspect_ratio": ratio,
-            "resolution": quality,
-            "output_format": "png",
-            "image_input": [image_url] if image_url else [],
-        }
+    if model_key == "model_gpt2":
+        if image_url:
+            model_name = cfg["i2i"]
+            input_body = {"prompt": prompt, "input_urls": [image_url], "aspect_ratio": ratio}
+        else:
+            model_name = cfg["t2i"]
+            input_body = {"prompt": prompt, "aspect_ratio": ratio}
+
+    elif image_url:
+        model_name = cfg["i2i"]
+        input_body = {"prompt": prompt, "image_urls": [image_url], "output_format": "png", "image_size": ratio}
+
+    elif model_key == "model_pro":
+        model_name = cfg["t2i"]
+        input_body = {"prompt": prompt, "aspect_ratio": ratio, "resolution": quality, "output_format": "png", "image_input": []}
+
     else:
-        input_body = {
-            "prompt": prompt,
-            "aspect_ratio": ratio,
-            "resolution": quality,
-            "output_format": "png",
-            "image_input": [image_url] if image_url else [],
-        }
+        model_name = cfg["t2i"]
+        input_body = {"prompt": prompt, "aspect_ratio": ratio, "resolution": quality, "output_format": "png", "image_input": []}
 
     async with aiohttp.ClientSession() as session:
         async with session.post(
             f"{KIE_BASE}/api/v1/jobs/createTask",
             headers=HEADERS,
-            json={"model": model, "input": input_body},
+            json={"model": model_name, "input": input_body},
             timeout=aiohttp.ClientTimeout(total=30)
         ) as resp:
             data = await resp.json()
@@ -127,7 +128,6 @@ async def create_kie_task(model: str, prompt: str, ratio: str,
 
 
 async def poll_kie_task(task_id: str, timeout: int = 300) -> str:
-
     deadline = asyncio.get_event_loop().time() + timeout
     async with aiohttp.ClientSession() as session:
         while asyncio.get_event_loop().time() < deadline:
@@ -159,8 +159,11 @@ async def do_generate(message: Message, state: FSMContext,
                       model_key: str, quality_key: str, ratio_key: str,
                       prompt: str, lang: str, user_id: int = None,
                       image_url: str = None):
-    uid  = user_id or message.from_user.id
-    cost = CREDIT_COST.get((model_key, quality_key), 17)
+    uid = user_id or message.from_user.id
+
+
+    cost_key = quality_key if quality_key else "q_1k"
+    cost = CREDIT_COST.get((model_key, cost_key)) or CREDIT_COST.get((model_key, None), 4)
 
     user = await get_user(uid)
     if not user or user["credits"] < cost:
@@ -174,28 +177,25 @@ async def do_generate(message: Message, state: FSMContext,
         await state.set_state(None)
         return
 
-    model   = MODEL_MAP.get(model_key, "google/nano-banana")
-    quality = QUALITY_MAP.get(quality_key, "1K")
+    quality = QUALITY_MAP.get(quality_key, "1K") if quality_key else "—"
     ratio   = RATIO_MAP.get(ratio_key, "1:1")
 
     wait_msg = await message.answer(t(lang, "generating"))
 
     try:
-        task_id   = await create_kie_task(model, prompt, ratio, quality, image_url)
+        task_id   = await create_kie_task(model_key, prompt, ratio, quality, image_url)
         image_out = await poll_kie_task(task_id)
 
         new_balance = await deduct_credits(uid, cost)
-        await log_generation(uid, model_key, quality_key, ratio_key, prompt, cost)
+        await log_generation(uid, model_key, quality_key or "—", ratio_key, prompt, cost)
 
         try:
             await wait_msg.delete()
         except Exception:
             pass
 
-        caption = t(lang, "done",
-                    model=model_key, quality=quality_key,
+        caption = t(lang, "done", model=model_key, quality=quality,
                     ratio=ratio, cost=cost, balance=new_balance)
-
         try:
             await message.answer_photo(
                 photo=URLInputFile(image_out),
@@ -211,17 +211,13 @@ async def do_generate(message: Message, state: FSMContext,
         await state.set_state(None)
 
     except ValueError:
-        try:
-            await wait_msg.delete()
-        except Exception:
-            pass
+        try: await wait_msg.delete()
+        except Exception: pass
         await message.answer(t(lang, "no_credits_gen", cost=cost, balance=0))
         await state.set_state(None)
     except Exception as e:
-        try:
-            await wait_msg.delete()
-        except Exception:
-            pass
+        try: await wait_msg.delete()
+        except Exception: pass
         await message.answer(t(lang, "gen_failed", error=str(e)))
         await state.set_state(None)
 
@@ -231,9 +227,19 @@ async def do_generate(message: Message, state: FSMContext,
 @router.callback_query(GenerateState.choosing_model, F.data.startswith("model"))
 async def choose_model(callback: CallbackQuery, state: FSMContext):
     lang = await get_lang(callback.from_user.id)
-    await state.update_data(model=callback.data)
-    await callback.message.answer(t(lang, "choose_quality"), reply_markup=quality_keyboard())
-    await state.set_state(GenerateState.choosing_quality)
+    model_key = callback.data
+    await state.update_data(model=model_key)
+
+    cfg = MODEL_CONFIG.get(model_key, {})
+    if cfg.get("has_quality", True):
+        await callback.message.answer(t(lang, "choose_quality"), reply_markup=quality_keyboard())
+        await state.set_state(GenerateState.choosing_quality)
+    else:
+        # GPT Image 2 — skip quality, go straight to ratio
+        await state.update_data(quality=None)
+        await callback.message.answer(t(lang, "choose_ratio"), reply_markup=ratio_keyboard())
+        await state.set_state(GenerateState.choosing_ratio)
+
     await callback.answer()
 
 
@@ -248,61 +254,43 @@ async def choose_quality(callback: CallbackQuery, state: FSMContext):
 
 @router.callback_query(GenerateState.choosing_ratio, F.data.startswith("r_"))
 async def choose_ratio(callback: CallbackQuery, state: FSMContext):
-    lang  = await get_lang(callback.from_user.id)
-    data  = await state.get_data()
+    lang = await get_lang(callback.from_user.id)
+    data = await state.get_data()
     await state.update_data(ratio=callback.data)
-    cost  = CREDIT_COST.get((data.get("model"), data.get("quality")), 17)
-    model_key = data.get("model")
+
+    model_key   = data.get("model")
+    quality_key = data.get("quality")
+    cost_key    = quality_key if quality_key else "q_1k"
+    cost = CREDIT_COST.get((model_key, cost_key)) or CREDIT_COST.get((model_key, None), 4)
 
     if model_key in SUPPORTS_IMAGE:
-
-        await callback.message.answer(
-            t(lang, "ask_image", cost=cost),
-            reply_markup=skip_image_keyboard(lang)
-        )
+        await callback.message.answer(t(lang, "ask_image", cost=cost), reply_markup=skip_image_keyboard(lang))
         await state.set_state(GenerateState.waiting_image)
     else:
-
         await callback.message.answer(t(lang, "prompt_cost", cost=cost))
         await state.set_state(GenerateState.waiting_prompt)
-
     await callback.answer()
 
 
 @router.message(GenerateState.waiting_image, F.photo)
 async def receive_image(message: Message, state: FSMContext, bot: Bot):
     lang = await get_lang(message.from_user.id)
-
     upload_msg = await message.answer(t(lang, "uploading_image"))
-
     try:
-
-        photo = message.photo[-1]
-        file  = await bot.get_file(photo.file_id)
-
+        photo      = message.photo[-1]
+        file       = await bot.get_file(photo.file_id)
         file_bytes = await bot.download_file(file.file_path)
-        image_bytes = file_bytes.read()
-
-
-        kie_image_url = await upload_image_to_kie(image_bytes)
-        await state.update_data(image_url=kie_image_url)
-
-        try:
-            await upload_msg.delete()
-        except Exception:
-            pass
-
+        kie_url    = await upload_image_to_kie(file_bytes.read())
+        await state.update_data(image_url=kie_url)
+        try: await upload_msg.delete()
+        except Exception: pass
         await message.answer(t(lang, "image_received"))
         await state.set_state(GenerateState.waiting_prompt)
-
     except Exception as e:
-        try:
-            await upload_msg.delete()
-        except Exception:
-            pass
-        await message.answer(f"❌ {'Fotoğraf yüklenemedi' if lang == 'tr' else 'Failed to upload photo'}: {e}")
+        try: await upload_msg.delete()
+        except Exception: pass
+        await message.answer(f"❌ {'Fotoğraf yüklenemedi' if lang == 'tr' else 'Upload failed'}: {e}")
         await state.set_state(GenerateState.waiting_prompt)
-
 
 
 @router.callback_query(lambda c: c.data == "skip_image")
@@ -310,7 +298,8 @@ async def skip_image(callback: CallbackQuery, state: FSMContext):
     lang = await get_lang(callback.from_user.id)
     await state.update_data(image_url=None)
     data = await state.get_data()
-    cost = CREDIT_COST.get((data.get("model"), data.get("quality")), 17)
+    cost_key = data.get("quality") or "q_1k"
+    cost = CREDIT_COST.get((data.get("model"), cost_key)) or 4
     await callback.message.answer(t(lang, "prompt_cost", cost=cost))
     await state.set_state(GenerateState.waiting_prompt)
     await callback.answer()
@@ -321,16 +310,10 @@ async def image_state_text(message: Message, state: FSMContext):
     lang = await get_lang(message.from_user.id)
     data = await state.get_data()
     await state.update_data(image_url=None, last_prompt=message.text)
-    await do_generate(
-        message, state,
-        model_key=data.get("model"),
-        quality_key=data.get("quality"),
-        ratio_key=data.get("ratio"),
-        prompt=message.text,
-        lang=lang,
-        user_id=message.from_user.id,
-        image_url=None
-    )
+    await do_generate(message, state,
+                      model_key=data.get("model"), quality_key=data.get("quality"),
+                      ratio_key=data.get("ratio"), prompt=message.text,
+                      lang=lang, user_id=message.from_user.id, image_url=None)
 
 
 @router.message(GenerateState.waiting_prompt)
@@ -338,16 +321,10 @@ async def get_prompt(message: Message, state: FSMContext):
     lang = await get_lang(message.from_user.id)
     data = await state.get_data()
     await state.update_data(last_prompt=message.text)
-    await do_generate(
-        message, state,
-        model_key=data.get("model"),
-        quality_key=data.get("quality"),
-        ratio_key=data.get("ratio"),
-        prompt=message.text,
-        lang=lang,
-        user_id=message.from_user.id,
-        image_url=data.get("image_url")
-    )
+    await do_generate(message, state,
+                      model_key=data.get("model"), quality_key=data.get("quality"),
+                      ratio_key=data.get("ratio"), prompt=message.text,
+                      lang=lang, user_id=message.from_user.id, image_url=data.get("image_url"))
 
 
 
@@ -356,29 +333,22 @@ async def get_prompt(message: Message, state: FSMContext):
 async def repeat_generation(callback: CallbackQuery, state: FSMContext):
     lang = await get_lang(callback.from_user.id)
     data = await state.get_data()
-
     model_key   = data.get("model")
     quality_key = data.get("quality")
     ratio_key   = data.get("ratio")
     prompt      = data.get("last_prompt")
     image_url   = data.get("image_url")
 
-    if not all([model_key, quality_key, ratio_key, prompt]):
+    if not all([model_key, ratio_key, prompt]):
         await callback.answer(
-            "Oturum süresi doldu, lütfen baştan başla." if lang == "tr"
-            else "Session expired, please start over.",
+            "Oturum süresi doldu." if lang == "tr" else "Session expired.",
             show_alert=True
         )
         return
 
     await callback.answer()
-    await do_generate(
-        callback.message, state,
-        model_key, quality_key, ratio_key,
-        prompt, lang,
-        user_id=callback.from_user.id,
-        image_url=image_url
-    )
+    await do_generate(callback.message, state, model_key, quality_key, ratio_key,
+                      prompt, lang, user_id=callback.from_user.id, image_url=image_url)
 
 
 @router.callback_query(lambda c: c.data == "go_generate")
