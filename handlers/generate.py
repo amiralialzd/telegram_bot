@@ -152,7 +152,7 @@ async def poll_kie_task(task_id: str, timeout: int = 300) -> str:
                 elif state == "fail":
                     raise Exception(f"Task failed: {task.get('failMsg', 'unknown')}")
             await asyncio.sleep(3)
-    raise Exception("Generation timed out after 5 minutes")
+    raise Exception("Generation timed out. Please try again.")
 
 
 async def do_generate(message: Message, state: FSMContext,
@@ -184,7 +184,9 @@ async def do_generate(message: Message, state: FSMContext,
 
     try:
         task_id   = await create_kie_task(model_key, prompt, ratio, quality, image_url)
-        image_out = await poll_kie_task(task_id)
+
+        timeout   = 660 if model_key == "model_gpt2" else 300
+        image_out = await poll_kie_task(task_id, timeout=timeout)
 
         new_balance = await deduct_credits(uid, cost)
         await log_generation(uid, model_key, quality_key or "—", ratio_key, prompt, cost)
