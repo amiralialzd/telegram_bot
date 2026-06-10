@@ -6,16 +6,24 @@ from aiogram.fsm.context import FSMContext
 from states import GenerateState
 from keyboards import model_keyboard, language_keyboard
 from db import get_or_create_user, set_language, get_user
+from db_referral import set_referred_by
 from texts import t
 
 router = Router()
 
 
 def main_menu_keyboard(lang: str, has_credits: bool) -> InlineKeyboardMarkup:
+    affiliate_labels = {
+        "tr": "🤝 Bizimle Kazan",
+        "en": "🤝 Earn With Us",
+        "ru": "🤝 Заработать",
+        "fa": "🤝 کسب درآمد",
+    }
     buttons = []
     if has_credits:
         buttons.append([InlineKeyboardButton(text=t(lang, "btn_generate"), callback_data="go_generate")])
     buttons.append([InlineKeyboardButton(text=t(lang, "btn_balance"),  callback_data="go_balance")])
+    buttons.append([InlineKeyboardButton(text=affiliate_labels.get(lang, "🤝 Earn With Us"), callback_data="go_affiliate")])
     buttons.append([InlineKeyboardButton(text=t(lang, "btn_lang"),     callback_data="open_lang_menu")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
@@ -23,11 +31,21 @@ def main_menu_keyboard(lang: str, has_credits: bool) -> InlineKeyboardMarkup:
 @router.message(CommandStart())
 async def start_handler(message: Message, state: FSMContext):
     await state.clear()
+
+    args = message.text.split()
+    referral_code = None
+    if len(args) > 1 and args[1].startswith("ref_"):
+        referral_code = args[1][4:]  # strip "ref_" prefix
+
     user = await get_or_create_user(
         telegram_id=message.from_user.id,
         full_name=message.from_user.full_name,
         username=message.from_user.username or ""
     )
+
+    if referral_code:
+        await set_referred_by(message.from_user.id, referral_code)
+
     lang    = user.get("language", "tr")
     credits = user["credits"]
 

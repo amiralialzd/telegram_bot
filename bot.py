@@ -3,7 +3,7 @@ from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 
 from config import API
-from handlers import start, payment, generate
+from handlers import start, payment, generate, affiliate
 
 async def main():
     bot = Bot(token=API, default=DefaultBotProperties(parse_mode='HTML'))
@@ -11,6 +11,7 @@ async def main():
 
     dp.include_router(start.router)
     dp.include_router(payment.router)
+    dp.include_router(affiliate.router)
     dp.include_router(generate.router)
 
     print("Bot is running...")
