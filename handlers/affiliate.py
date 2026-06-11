@@ -1,7 +1,6 @@
 import os
 from aiogram import Router, Bot
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
-
 from db import get_user
 from db_referral import generate_referral_code, get_referral_stats, set_referred_by
 from texts import t
@@ -126,7 +125,7 @@ async def show_affiliate(callback: CallbackQuery):
     lang = user.get("language", "tr") if user else "tr"
 
     ref_code = await generate_referral_code(callback.from_user.id)
-    ref_link = f"t.me/{BOT_USERNAME}?start=ref_{ref_code}"
+    ref_link = f"https://t.me/{BOT_USERNAME}?start=ref_{ref_code}"
     stats    = await get_referral_stats(callback.from_user.id)
 
     await callback.message.answer(
@@ -142,7 +141,7 @@ async def refresh_affiliate(callback: CallbackQuery):
     lang = user.get("language", "tr") if user else "tr"
 
     ref_code = await generate_referral_code(callback.from_user.id)
-    ref_link = f"t.me/{BOT_USERNAME}?start=ref_{ref_code}"
+    ref_link = f"https://t.me/{BOT_USERNAME}?start=ref_{ref_code}"
     stats    = await get_referral_stats(callback.from_user.id)
 
     try:
