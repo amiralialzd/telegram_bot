@@ -116,7 +116,7 @@ async def notify_referrer(bot: Bot, referrer_id: int, stars_paid: int, reward: i
             referral_notification(lang, stars_paid, reward)
         )
     except Exception:
-        pass  # Don't crash if notification fails
+        pass
 
 
 @router.callback_query(lambda c: c.data == "go_affiliate")
