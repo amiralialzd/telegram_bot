@@ -1,10 +1,18 @@
 # 🍌 Nano Banana Bot
 
 A Telegram bot for AI image generation powered by KieAI, built with Python and aiogram. Includes a credit system, Telegram Stars payments, a referral/affiliate program, and multilingual support, deployed on Railway.
+## Screenshots
 
+| Welcome menu | Image generation flow |
+|---|---|
+| ![Welcome menu](images/welcome-message.jpeg) | ![Generation flow](images/workflow.jpeg) |
+
+| Referral program | Language selection |
+|---|---|
+| ![Referral program](images/work-with-us.jpeg) | ![Language selection](images/different-language.jpeg) |
 ## Features
 
-- 🎨 **Two AI Models** — Nano Banana Pro and Nano Banana 2
+- 🎨 **Three AI Models** — Nano Banana Pro, Nano Banana 2, and GPT Image 2
 - 📐 **Quality Options** — 1K, 2K, 4K resolution
 - 🖼️ **Aspect Ratios** — 1:1, 9:16, 16:9
 - 📎 **Image + Prompt** — Upload a reference photo alongside a text prompt
